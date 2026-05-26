@@ -24,10 +24,10 @@ UNB_TOKEN = os.getenv("UNB_TOKEN")
 GUILD_ID = 1457641106517921824
 
 ROLE_NAME = "Gamble God"
-GAMBLER_ROLE_NAME = "The Gambler"  # Only check members with this role
+GAMBLER_ROLE_NAME = "The Gambler"
 CASH_THRESHOLD = 10_000_000
 
-CHECK_INTERVAL_MINUTES = 15  # Can be more frequent now since we check fewer people
+CHECK_INTERVAL_MINUTES = 5
 # =========================
 
 intents = discord.Intents.default()
@@ -96,8 +96,8 @@ async def sync_gamblers():
         for i, member in enumerate(gamblers):
             try:
                 await update_role(session, member)
-                await asyncio.sleep(1)  # Faster since fewer members
-                if (i + 1) % 25 == 0:
+                await asyncio.sleep(0.5)  # 0.5 second delay = ~2 min full sync
+                if (i + 1) % 50 == 0:
                     print(f"Synced {i+1}/{len(gamblers)}...")
             except Exception as e:
                 print(f"Failed {member.name}: {e}")
