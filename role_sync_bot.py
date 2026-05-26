@@ -4,7 +4,6 @@ import aiohttp
 import asyncio
 from flask import Flask
 from threading import Thread
-import logging
 
 app = Flask('')
 
@@ -36,8 +35,12 @@ intents.members = True
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Suppress command-not-found spam
-logging.getLogger("discord.ext.commands.bot").setLevel(logging.CRITICAL)
+
+@bot.event
+async def on_command_error(ctx, error):
+    if isinstance(error, commands.CommandNotFound):
+        return  # Silently ignore unknown commands
+    raise error  # Let real errors through
 
 
 async def get_balance(session: aiohttp.ClientSession, user_id: int) -> int:
