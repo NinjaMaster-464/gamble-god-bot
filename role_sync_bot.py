@@ -25,6 +25,7 @@ GUILD_ID = 1457641106517921824
 
 ROLE_NAME = "Gamble God"
 GAMBLER_ROLE_NAME = "The Gambler"
+LOG_CHANNEL_NAME = "gamble-god-logs"
 CASH_THRESHOLD = 10_000_000
 
 CHECK_INTERVAL_MINUTES = 5
@@ -39,8 +40,18 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 @bot.event
 async def on_command_error(ctx, error):
     if isinstance(error, commands.CommandNotFound):
-        return  # Silently ignore unknown commands
-    raise error  # Let real errors through
+        return
+    raise error
+
+
+async def send_log(message: str):
+    """Send a message to the log channel."""
+    guild = bot.get_guild(GUILD_ID)
+    if not guild:
+        return
+    channel = discord.utils.get(guild.text_channels, name=LOG_CHANNEL_NAME)
+    if channel:
+        await channel.send(message)
 
 
 async def get_balance(session: aiohttp.ClientSession, user_id: int) -> int:
@@ -79,10 +90,14 @@ async def update_role(session: aiohttp.ClientSession, member: discord.Member):
 
     if balance >= CASH_THRESHOLD and not has_role:
         await member.add_roles(role)
-        print(f"Gave Gamble God to {member.name} (${balance:,})")
+        msg = f"🟢 **{member.mention}** got Gamble God! (${balance:,})"
+        print(msg)
+        await send_log(msg)
     elif balance < CASH_THRESHOLD and has_role:
         await member.remove_roles(role)
-        print(f"Removed Gamble God from {member.name} (${balance:,})")
+        msg = f"🔴 **{member.mention}** lost Gamble God. (${balance:,})"
+        print(msg)
+        await send_log(msg)
 
 
 @tasks.loop(minutes=CHECK_INTERVAL_MINUTES)
@@ -97,6 +112,8 @@ async def sync_gamblers():
         return
 
     gamblers = [m for m in guild.members if gambler_role in m.roles and not m.bot]
+    
+    await send_log(f"🔄 Starting sync for {len(gamblers)} gamblers...")
     print(f"Syncing {len(gamblers)} gamblers...")
 
     async with aiohttp.ClientSession() as session:
@@ -109,12 +126,14 @@ async def sync_gamblers():
             except Exception as e:
                 print(f"Failed {member.name}: {e}")
 
+    await send_log(f"✅ Sync complete! {len(gamblers)} gamblers checked.")
     print("Gambler sync complete.")
 
 
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user}")
+    await send_log("🚀 Bot is online and watching balances!")
     sync_gamblers.start()
 
 
