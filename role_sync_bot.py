@@ -4,6 +4,7 @@ import aiohttp
 import asyncio
 from flask import Flask
 from threading import Thread
+import logging
 
 app = Flask('')
 
@@ -34,6 +35,9 @@ intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
+
+# Suppress command-not-found spam
+logging.getLogger("discord.ext.commands.bot").setLevel(logging.CRITICAL)
 
 
 async def get_balance(session: aiohttp.ClientSession, user_id: int) -> int:
@@ -96,7 +100,7 @@ async def sync_gamblers():
         for i, member in enumerate(gamblers):
             try:
                 await update_role(session, member)
-                await asyncio.sleep(0.5)  # 0.5 second delay = ~2 min full sync
+                await asyncio.sleep(0.5)
                 if (i + 1) % 50 == 0:
                     print(f"Synced {i+1}/{len(gamblers)}...")
             except Exception as e:
