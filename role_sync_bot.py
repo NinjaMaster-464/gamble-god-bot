@@ -15,6 +15,7 @@ def run_http():
     app.run(host='0.0.0.0', port=8080)
 
 Thread(target=run_http).start()
+
 # ===== CONFIGURATION =====
 import os
 
@@ -23,9 +24,10 @@ UNB_TOKEN = os.getenv("UNB_TOKEN")
 GUILD_ID = 1457641106517921824
 
 ROLE_NAME = "Gamble God"
+GAMBLER_ROLE_NAME = "The Gambler"  # Only check members with this role
 CASH_THRESHOLD = 10_000_000
 
-CHECK_INTERVAL_MINUTES = 60
+CHECK_INTERVAL_MINUTES = 15  # Can be more frequent now since we check fewer people
 # =========================
 
 intents = discord.Intents.default()
@@ -77,31 +79,36 @@ async def update_role(session: aiohttp.ClientSession, member: discord.Member):
 
 
 @tasks.loop(minutes=CHECK_INTERVAL_MINUTES)
-async def sync_all_members():
+async def sync_gamblers():
     guild = bot.get_guild(GUILD_ID)
     if not guild:
         return
 
-    members = [m for m in guild.members if not m.bot]
-    print(f"Starting sync for {len(members)} members...")
+    gambler_role = discord.utils.get(guild.roles, name=GAMBLER_ROLE_NAME)
+    if not gambler_role:
+        print(f"Role '{GAMBLER_ROLE_NAME}' not found!")
+        return
+
+    gamblers = [m for m in guild.members if gambler_role in m.roles and not m.bot]
+    print(f"Syncing {len(gamblers)} gamblers...")
 
     async with aiohttp.ClientSession() as session:
-        for i, member in enumerate(members):
+        for i, member in enumerate(gamblers):
             try:
                 await update_role(session, member)
-                await asyncio.sleep(2)
-                if (i + 1) % 100 == 0:
-                    print(f"Synced {i+1}/{len(members)}...")
+                await asyncio.sleep(1)  # Faster since fewer members
+                if (i + 1) % 25 == 0:
+                    print(f"Synced {i+1}/{len(gamblers)}...")
             except Exception as e:
                 print(f"Failed {member.name}: {e}")
 
-    print("Sync complete.")
+    print("Gambler sync complete.")
 
 
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user}")
-    sync_all_members.start()
+    sync_gamblers.start()
 
 
 @bot.command(name="check")
@@ -119,8 +126,8 @@ async def check_balance(ctx):
 @bot.command(name="syncall")
 @commands.has_permissions(administrator=True)
 async def sync_all_command(ctx):
-    await ctx.send("Syncing all members... this will take a while!")
-    await sync_all_members()
+    await ctx.send("Syncing all gamblers...")
+    await sync_gamblers()
     await ctx.send("Done!")
 
 
