@@ -195,7 +195,7 @@ async def blacklist(ctx, member: discord.Member, blacklist_type: str):
     """Toggle a blacklist role on a user. Usage: !blacklist @user economy or !blacklist @user loan"""
     
     eco_role = discord.utils.get(ctx.guild.roles, name="Economy Blacklist")
-    loan_role = discord.utils.get(ctx.guild.roles, name="Loan Blacklist")
+    loan_role = discord.utils.get(ctx.guild.roles, name="Loan Blacklist(they don't pay back loans)")
 
     if not eco_role or not loan_role:
         await ctx.send("❌ One or both blacklist roles not found.")
