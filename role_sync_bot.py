@@ -25,6 +25,7 @@ GUILD_ID = 1457641106517921824
 
 ROLE_NAME = "Gamble God"
 GAMBLER_ROLE_NAME = "The Gambler"
+GAMBLE_ASSISTANT_ROLE = "Gamble Assistant"
 LOG_CHANNEL_NAME = "gamble-god-logs"
 CASH_THRESHOLD = 10_000_000
 
@@ -41,21 +42,24 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 async def on_command_error(ctx, error):
     if isinstance(error, commands.CommandNotFound):
         return
+    if isinstance(error, commands.MissingRole):
+        await ctx.send("❌ You don't have permission to use this command.")
+        return
     raise error
 
 
-async def send_log(message: str):
-    """Send a message to the log channel."""
+async def send_log_embed(title: str, description: str, color: int):
+    """Send an embed to the log channel."""
     guild = bot.get_guild(GUILD_ID)
     if not guild:
         return
     channel = discord.utils.get(guild.text_channels, name=LOG_CHANNEL_NAME)
     if channel:
-        await channel.send(message)
+        embed = discord.Embed(title=title, description=description, color=color)
+        await channel.send(embed=embed)
 
 
 async def get_balance(session: aiohttp.ClientSession, user_id: int) -> int:
-    """Fetch a user's TOTAL balance (cash + bank) from UnbelievaBoat API."""
     url = f"https://unbelievaboat.com/api/v1/guilds/{GUILD_ID}/users/{user_id}"
     headers = {
         "Authorization": UNB_TOKEN,
@@ -90,14 +94,20 @@ async def update_role(session: aiohttp.ClientSession, member: discord.Member):
 
     if balance >= CASH_THRESHOLD and not has_role:
         await member.add_roles(role)
-        msg = f"🟢 **{member.mention}** got Gamble God! (${balance:,})"
-        print(msg)
-        await send_log(msg)
+        print(f"Gave Gamble God to {member.name} (${balance:,})")
+        await send_log_embed(
+            title="🟢 Gamble God Assigned",
+            description=f"**{member.name}** now has Gamble God!\nBalance: ${balance:,}",
+            color=0x00ff00
+        )
     elif balance < CASH_THRESHOLD and has_role:
         await member.remove_roles(role)
-        msg = f"🔴 **{member.mention}** lost Gamble God. (${balance:,})"
-        print(msg)
-        await send_log(msg)
+        print(f"Removed Gamble God from {member.name} (${balance:,})")
+        await send_log_embed(
+            title="🔴 Gamble God Removed",
+            description=f"**{member.name}** lost Gamble God.\nBalance: ${balance:,}",
+            color=0xff0000
+        )
 
 
 @tasks.loop(minutes=CHECK_INTERVAL_MINUTES)
@@ -113,7 +123,11 @@ async def sync_gamblers():
 
     gamblers = [m for m in guild.members if gambler_role in m.roles and not m.bot]
     
-    await send_log(f"🔄 Starting sync for {len(gamblers)} gamblers...")
+    await send_log_embed(
+        title="🔄 Sync Started",
+        description=f"Checking {len(gamblers)} gamblers...",
+        color=0x3498db
+    )
     print(f"Syncing {len(gamblers)} gamblers...")
 
     async with aiohttp.ClientSession() as session:
@@ -126,14 +140,22 @@ async def sync_gamblers():
             except Exception as e:
                 print(f"Failed {member.name}: {e}")
 
-    await send_log(f"✅ Sync complete! {len(gamblers)} gamblers checked.")
+    await send_log_embed(
+        title="✅ Sync Complete",
+        description=f"{len(gamblers)} gamblers checked.",
+        color=0x00ff00
+    )
     print("Gambler sync complete.")
 
 
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user}")
-    await send_log("🚀 Bot is online and watching balances!")
+    await send_log_embed(
+        title="🚀 Bot Online",
+        description="Bot is online and watching balances!",
+        color=0x9b59b6
+    )
     sync_gamblers.start()
 
 
@@ -142,6 +164,16 @@ async def check_balance(ctx):
     async with aiohttp.ClientSession() as session:
         balance = await get_balance(session, ctx.author.id)
         await update_role(session, ctx.author)
+
+    # Auto-assign The Gambler role to anyone who uses !check
+    gambler_role = discord.utils.get(ctx.guild.roles, name=GAMBLER_ROLE_NAME)
+    if gambler_role and gambler_role not in ctx.author.roles:
+        await ctx.author.add_roles(gambler_role)
+        await send_log_embed(
+            title="🎰 Gambler Role Assigned",
+            description=f"**{ctx.author.name}** got The Gambler role via `!check`",
+            color=0xf1c40f
+        )
 
     if balance >= CASH_THRESHOLD:
         await ctx.send(f"Your total balance is ${balance:,}. You are a Gamble God!")
@@ -155,6 +187,60 @@ async def sync_all_command(ctx):
     await ctx.send("Syncing all gamblers...")
     await sync_gamblers()
     await ctx.send("Done!")
+
+
+@bot.command(name="blacklist")
+@commands.has_role(GAMBLE_ASSISTANT_ROLE)
+async def blacklist(ctx, member: discord.Member, blacklist_type: str):
+    """Toggle a blacklist role on a user. Usage: !blacklist @user economy or !blacklist @user loan"""
+    
+    eco_role = discord.utils.get(ctx.guild.roles, name="Economy Blacklist")
+    loan_role = discord.utils.get(ctx.guild.roles, name="Loan Blacklist")
+
+    if not eco_role or not loan_role:
+        await ctx.send("❌ One or both blacklist roles not found.")
+        return
+
+    blacklist_type = blacklist_type.lower()
+
+    if blacklist_type == "economy":
+        if eco_role in member.roles:
+            await member.remove_roles(eco_role)
+            await ctx.send(f"✅ Removed Economy Blacklist from {member.name}")
+            await send_log_embed(
+                title="🔓 Economy Blacklist Removed",
+                description=f"**{ctx.author.name}** removed Economy Blacklist from **{member.name}**",
+                color=0xe67e22
+            )
+        else:
+            await member.add_roles(eco_role)
+            await ctx.send(f"✅ Added Economy Blacklist to {member.name}")
+            await send_log_embed(
+                title="🔒 Economy Blacklist Added",
+                description=f"**{ctx.author.name}** added Economy Blacklist to **{member.name}**",
+                color=0xe67e22
+            )
+    
+    elif blacklist_type == "loan":
+        if loan_role in member.roles:
+            await member.remove_roles(loan_role)
+            await ctx.send(f"✅ Removed Loan Blacklist from {member.name}")
+            await send_log_embed(
+                title="🔓 Loan Blacklist Removed",
+                description=f"**{ctx.author.name}** removed Loan Blacklist from **{member.name}**",
+                color=0xe74c3c
+            )
+        else:
+            await member.add_roles(loan_role)
+            await ctx.send(f"✅ Added Loan Blacklist to {member.name}")
+            await send_log_embed(
+                title="🔒 Loan Blacklist Added",
+                description=f"**{ctx.author.name}** added Loan Blacklist to **{member.name}**",
+                color=0xe74c3c
+            )
+    
+    else:
+        await ctx.send("❌ Invalid type. Use `economy` or `loan`.")
 
 
 bot.run(DISCORD_TOKEN)
