@@ -203,39 +203,32 @@ async def on_message(message):
     if message.channel.name == TRANSACTION_LOG_CHANNEL and message.embeds:
         embed = message.embeds[0]
         
-        # Step 1: Check author
-        if not embed.author:
-            await message.channel.send("[DEBUG] No author field")
+        if not embed.author or "Balance updated" not in str(embed.author.name):
+            await bot.process_commands(message)
             return
         
-        if "Balance updated" not in str(embed.author.name):
-            await message.channel.send(f"[DEBUG] Author not Balance updated: {embed.author.name}")
-            return
-        
-        # Step 2: Check description
         if not embed.description:
-            await message.channel.send("[DEBUG] No description")
+            await bot.process_commands(message)
             return
         
         description = embed.description
         
-        # Step 3: Check reason
         if "give-money" not in description.lower():
-            await message.channel.send(f"[DEBUG] Not give-money: {description[:100]}")
+            await bot.process_commands(message)
             return
         
         await message.channel.send(f"[DEBUG] Give-money detected! Parsing...")
+        await message.channel.send(f"[DEBUG] Raw description: {repr(description[:300])}")
         
-        # Step 4: Parse
         receiver_match = re.search(r'User:\s*<@!?(\d+)>', description)
         sender_match = re.search(r'Actioned by:\s*<@!?(\d+)>', description)
         
         if not receiver_match:
-            await message.channel.send(f"[DEBUG] No receiver match in: {description[:200]}")
+            await message.channel.send(f"[DEBUG] No receiver match")
             return
         
         if not sender_match:
-            await message.channel.send(f"[DEBUG] No sender match in: {description[:200]}")
+            await message.channel.send(f"[DEBUG] No sender match")
             return
         
         await message.channel.send(f"[DEBUG] Found receiver and sender!")
