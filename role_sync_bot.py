@@ -34,7 +34,7 @@ LOAN_BLACKLIST_ROLE_ID = 1513096621934772325  # Loan Blacklist
 
 LOG_CHANNEL_NAME = "gamble-god-logs"
 CMD_LOG_CHANNEL_NAME = "ninja-bot-logs"
-TRANSACTION_LOG_CHANNEL = "transaction-logs"
+TRANSACTION_LOG_CHANNEL = "transactions-logs"
 CASH_THRESHOLD = 10_000_000
 
 CHECK_INTERVAL_MINUTES = 5
@@ -203,129 +203,128 @@ async def on_message(message):
     if message.author.bot or not message.guild:
         return
 
-    # Debug: log ALL messages in transaction-logs
-    if message.channel.name == TRANSACTION_LOG_CHANNEL:
-        print(f"[DEBUG] Message in transaction-logs from {message.author.name}")
-        print(f"[DEBUG] Has embeds: {bool(message.embeds)}")
-        if message.embeds:
-            embed = message.embeds[0]
-            print(f"[DEBUG] Embed title: {embed.title}")
-            print(f"[DEBUG] Embed description: {embed.description}")
-            print(f"[DEBUG] Embed fields: {[(f.name, f.value) for f in embed.fields]}")
-            
-            # Check if it's a Balance updated embed
-            if embed.title and "Balance updated" in str(embed.title):
-                print("[DEBUG] Found Balance updated embed!")
-                
-                fields = {}
-                for field in embed.fields:
-                    fields[field.name] = field.value
-                
-                print(f"[DEBUG] Parsed fields: {fields}")
-                
-                reason = fields.get("Reason", "")
-                print(f"[DEBUG] Reason: {reason}")
-                
-                if "give-money" in reason.lower():
-                    print("[DEBUG] This is a give-money transaction!")
-                    
-                    receiver_str = fields.get("User", "")
-                    sender_str = fields.get("Actioned by", "")
-                    
-                    print(f"[DEBUG] Receiver str: {receiver_str}")
-                    print(f"[DEBUG] Sender str: {sender_str}")
-                    
-                    receiver_match = re.search(r'<@!?(\d+)>', receiver_str)
-                    sender_match = re.search(r'<@!?(\d+)>', sender_str)
-                    
-                    if receiver_match:
-                        receiver_id = int(receiver_match.group(1))
-                        print(f"[DEBUG] Receiver ID: {receiver_id}")
-                    else:
-                        print("[DEBUG] Could not find receiver ID!")
-                        await bot.process_commands(message)
-                        return
-                    
-                    if sender_match:
-                        sender_id = int(sender_match.group(1))
-                        print(f"[DEBUG] Sender ID: {sender_id}")
-                    else:
-                        print("[DEBUG] Could not find sender ID!")
-                        await bot.process_commands(message)
-                        return
-                    
-                    receiver = message.guild.get_member(receiver_id)
-                    sender = message.guild.get_member(sender_id)
-                    
-                    if not receiver:
-                        print("[DEBUG] Receiver member not found!")
-                        return
-                    if not sender:
-                        print("[DEBUG] Sender member not found!")
-                        return
-                    
-                    loan_role = message.guild.get_role(LOAN_BLACKLIST_ROLE_ID)
-                    if not loan_role:
-                        print("[DEBUG] Loan blacklist role not found!")
-                        return
-                    
-                    print(f"[DEBUG] Receiver has loan blacklist: {loan_role in receiver.roles}")
-                    
-                    if loan_role not in receiver.roles:
-                        print("[DEBUG] Receiver not blacklisted, skipping.")
-                        await bot.process_commands(message)
-                        return
-                    
-                    amount_str = fields.get("Amount", "")
-                    print(f"[DEBUG] Amount str: {amount_str}")
-                    
-                    cash_match = re.search(r'Cash:\s*\+?([\d,]+)', amount_str)
-                    bank_match = re.search(r'Bank:\s*\+?([\d,]+)', amount_str)
-                    
-                    amount = 0
-                    if cash_match:
-                        amount += int(cash_match.group(1).replace(',', ''))
-                    if bank_match:
-                        amount += int(bank_match.group(1).replace(',', ''))
-                    
-                    print(f"[DEBUG] Extracted amount: {amount}")
-                    
-                    if amount <= 0:
-                        print("[DEBUG] Amount is 0 or less, skipping.")
-                        return
-                    
-                    print(f"[DEBUG] Reversing payment: {sender.name} -> {receiver.name}, ${amount}")
-                    
-                    async with aiohttp.ClientSession() as session:
-                        await asyncio.sleep(0.5)
-                        success = await reverse_payment(session, sender_id, receiver_id, amount)
-                    
-                    print(f"[DEBUG] Reversal success: {success}")
-                    
-                    if success:
-                        await message.channel.send(
-                            f"🚫 **Payment Blocked!** {receiver.mention} is Loan Blacklisted.\n"
-                            f"${amount:,} has been returned to {sender.mention}."
-                        )
-                        await send_cmd_log(
-                            title="🚫 Payment Blocked",
-                            description=f"**{sender.name}** tried to send ${amount:,} to **{receiver.name}** (Loan Blacklisted)\nMoney returned.",
-                            color=0xff0000
-                        )
-                    else:
-                        await message.channel.send(
-                            f"⚠️ **Warning!** {receiver.mention} is Loan Blacklisted but payment reversal failed. Staff please check."
-                        )
-                        await send_cmd_log(
-                            title="⚠️ Reversal Failed",
-                            description=f"**{sender.name}** sent ${amount:,} to **{receiver.name}** (Loan Blacklisted). Could not reverse!",
-                            color=0xff0000
-                        )
-                    return
+    # Check if this is the UnbelievaBoat transaction log channel
+    if message.channel.name == TRANSACTION_LOG_CHANNEL and message.embeds:
+        embed = message.embeds[0]
         
-        await bot.process_commands(message)
-        return
-
+        # Debug logging
+        print(f"[DEBUG] Message in {TRANSACTION_LOG_CHANNEL} from {message.author.name}")
+        print(f"[DEBUG] Embed title: {embed.title}")
+        
+        # Look for Balance updated embeds
+        if embed.title and "Balance updated" in str(embed.title):
+            print("[DEBUG] Found Balance updated embed!")
+            
+            fields = {}
+            for field in embed.fields:
+                fields[field.name] = field.value
+            
+            print(f"[DEBUG] Parsed fields: {fields}")
+            
+            reason = fields.get("Reason", "")
+            print(f"[DEBUG] Reason: {reason}")
+            
+            if "give-money" not in reason.lower():
+                print("[DEBUG] Not a give-money transaction, skipping.")
+                await bot.process_commands(message)
+                return
+            
+            print("[DEBUG] This is a give-money transaction!")
+            
+            receiver_str = fields.get("User", "")
+            sender_str = fields.get("Actioned by", "")
+            
+            print(f"[DEBUG] Receiver str: {receiver_str}")
+            print(f"[DEBUG] Sender str: {sender_str}")
+            
+            receiver_match = re.search(r'<@!?(\d+)>', receiver_str)
+            sender_match = re.search(r'<@!?(\d+)>', sender_str)
+            
+            if receiver_match:
+                receiver_id = int(receiver_match.group(1))
+                print(f"[DEBUG] Receiver ID: {receiver_id}")
+            else:
+                print("[DEBUG] Could not find receiver ID!")
+                await bot.process_commands(message)
+                return
+            
+            if sender_match:
+                sender_id = int(sender_match.group(1))
+                print(f"[DEBUG] Sender ID: {sender_id}")
+            else:
+                print("[DEBUG] Could not find sender ID!")
+                await bot.process_commands(message)
+                return
+            
+            receiver = message.guild.get_member(receiver_id)
+            sender = message.guild.get_member(sender_id)
+            
+            if not receiver:
+                print("[DEBUG] Receiver member not found!")
+                return
+            if not sender:
+                print("[DEBUG] Sender member not found!")
+                return
+            
+            loan_role = message.guild.get_role(LOAN_BLACKLIST_ROLE_ID)
+            if not loan_role:
+                print("[DEBUG] Loan blacklist role not found!")
+                return
+            
+            print(f"[DEBUG] Receiver has loan blacklist: {loan_role in receiver.roles}")
+            
+            if loan_role not in receiver.roles:
+                print("[DEBUG] Receiver not blacklisted, skipping.")
+                await bot.process_commands(message)
+                return
+            
+            amount_str = fields.get("Amount", "")
+            print(f"[DEBUG] Amount str: {amount_str}")
+            
+            cash_match = re.search(r'Cash:\s*\+?([\d,]+)', amount_str)
+            bank_match = re.search(r'Bank:\s*\+?([\d,]+)', amount_str)
+            
+            amount = 0
+            if cash_match:
+                amount += int(cash_match.group(1).replace(',', ''))
+            if bank_match:
+                amount += int(bank_match.group(1).replace(',', ''))
+            
+            print(f"[DEBUG] Extracted amount: {amount}")
+            
+            if amount <= 0:
+                print("[DEBUG] Amount is 0 or less, skipping.")
+                return
+            
+            print(f"[DEBUG] Reversing payment: {sender.name} -> {receiver.name}, ${amount}")
+            
+            async with aiohttp.ClientSession() as session:
+                await asyncio.sleep(0.5)
+                success = await reverse_payment(session, sender_id, receiver_id, amount)
+            
+            print(f"[DEBUG] Reversal success: {success}")
+            
+            if success:
+                await message.channel.send(
+                    f"🚫 **Payment Blocked!** {receiver.mention} is Loan Blacklisted.\n"
+                    f"${amount:,} has been returned to {sender.mention}."
+                )
+                await send_cmd_log(
+                    title="🚫 Payment Blocked",
+                    description=f"**{sender.name}** tried to send ${amount:,} to **{receiver.name}** (Loan Blacklisted)\nMoney returned.",
+                    color=0xff0000
+                )
+            else:
+                await message.channel.send(
+                    f"⚠️ **Warning!** {receiver.mention} is Loan Blacklisted but payment reversal failed. Staff please check."
+                )
+                await send_cmd_log(
+                    title="⚠️ Reversal Failed",
+                    description=f"**{sender.name}** sent ${amount:,} to **{receiver.name}** (Loan Blacklisted). Could not reverse!",
+                    color=0xff0000
+                )
+            return
+    
     # Process commands normally for all other messages
     await bot.process_commands(message)
 
@@ -376,6 +375,18 @@ async def on_ready():
         description="Bot is online and watching balances!",
         color=0x9b59b6
     )
+    
+    # DEBUG: Check if transaction log channel exists
+    guild = bot.get_guild(GUILD_ID)
+    channel = discord.utils.get(guild.text_channels, name=TRANSACTION_LOG_CHANNEL)
+    if channel:
+        print(f"[DEBUG] Found '{TRANSACTION_LOG_CHANNEL}' channel: {channel.id}")
+        print(f"[DEBUG] Bot can read: {channel.permissions_for(guild.me).read_messages}")
+        print(f"[DEBUG] Bot can read history: {channel.permissions_for(guild.me).read_message_history}")
+    else:
+        print(f"[DEBUG] Channel '{TRANSACTION_LOG_CHANNEL}' NOT FOUND!")
+        print(f"[DEBUG] Available channels: {[c.name for c in guild.text_channels[:20]]}")
+    
     sync_gamblers.start()
 
 
