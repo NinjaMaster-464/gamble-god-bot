@@ -199,27 +199,27 @@ async def reverse_payment(session: aiohttp.ClientSession, from_id: int, to_id: i
 
 @bot.event
 async def on_message(message):
-    # Don't process own messages or DMs
-    if message.author.bot or not message.guild:
+    # Don't process DMs or our own messages
+    if not message.guild or message.author == bot.user:
         return
-
-    # TEST: Send all messages to ninja-bot-logs
-    guild = bot.get_guild(GUILD_ID)
-    if guild:
-        cmd_channel = discord.utils.get(guild.text_channels, name=CMD_LOG_CHANNEL_NAME)
-        if cmd_channel:
-            await cmd_channel.send(f"[MSG] Channel: {message.channel.name} | Author: {message.author.name} | Content: {message.content[:100]} | Embeds: {len(message.embeds)}")
 
     # Check if this is the UnbelievaBoat transaction log channel
     if message.channel.name == TRANSACTION_LOG_CHANNEL and message.embeds:
         embed = message.embeds[0]
         
+        # Debug: log what we see
+        await send_cmd_log(
+            title="[DEBUG] Transaction Log Detected",
+            description=f"Author: {message.author.name}\nTitle: {embed.title}\nFields: {[(f.name, f.value[:50]) for f in embed.fields]}",
+            color=0x3498db
+        )
+        
         # Look for Balance updated embeds
         if embed.title and "Balance updated" in str(embed.title):
             await send_cmd_log(
-                title="[DEBUG] Found Balance Updated",
-                description=f"Processing transaction...",
-                color=0x3498db
+                title="[DEBUG] Balance Updated Found",
+                description=f"Processing...",
+                color=0x2ecc71
             )
             
             fields = {}
@@ -261,7 +261,7 @@ async def on_message(message):
             if not receiver or not sender:
                 await send_cmd_log(
                     title="[DEBUG] Member Error",
-                    description=f"Could not find members\nReceiver ID: {receiver_id}\nSender ID: {sender_id}",
+                    description=f"Could not find members",
                     color=0xff0000
                 )
                 return
@@ -273,7 +273,7 @@ async def on_message(message):
             if loan_role not in receiver.roles:
                 await send_cmd_log(
                     title="[DEBUG] Not Blacklisted",
-                    description=f"Receiver {receiver.name} is not loan blacklisted",
+                    description=f"{receiver.name} is not loan blacklisted",
                     color=0x95a5a6
                 )
                 await bot.process_commands(message)
@@ -294,7 +294,7 @@ async def on_message(message):
             
             await send_cmd_log(
                 title="[DEBUG] Reversing",
-                description=f"{sender.name} -> {receiver.name}\nAmount: ${amount:,}",
+                description=f"{sender.name} -> {receiver.name}\n${amount:,}",
                 color=0xf39c12
             )
             
@@ -323,7 +323,7 @@ async def on_message(message):
                 )
             return
     
-    # Process commands normally for all other messages
+    # Process commands normally
     await bot.process_commands(message)
 
 
@@ -373,18 +373,6 @@ async def on_ready():
         description="Bot is online and watching balances!",
         color=0x9b59b6
     )
-    
-    # DEBUG: Check if transaction log channel exists
-    guild = bot.get_guild(GUILD_ID)
-    channel = discord.utils.get(guild.text_channels, name=TRANSACTION_LOG_CHANNEL)
-    if channel:
-        print(f"[DEBUG] Found '{TRANSACTION_LOG_CHANNEL}' channel: {channel.id}")
-        print(f"[DEBUG] Bot can read: {channel.permissions_for(guild.me).read_messages}")
-        print(f"[DEBUG] Bot can read history: {channel.permissions_for(guild.me).read_message_history}")
-    else:
-        print(f"[DEBUG] Channel '{TRANSACTION_LOG_CHANNEL}' NOT FOUND!")
-        print(f"[DEBUG] Available channels: {[c.name for c in guild.text_channels[:20]]}")
-    
     sync_gamblers.start()
 
 
