@@ -203,6 +203,9 @@ async def on_message(message):
     if message.author.bot or not message.guild:
         return
 
+    # SUPER SIMPLE TEST - log ALL messages
+    print(f"[MSG] Channel: {message.channel.name} | Author: {message.author.name} | Content: {message.content[:100]} | Embeds: {len(message.embeds)}")
+
     # Check if this is the UnbelievaBoat transaction log channel
     if message.channel.name == TRANSACTION_LOG_CHANNEL and message.embeds:
         embed = message.embeds[0]
