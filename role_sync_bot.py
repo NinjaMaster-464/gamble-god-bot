@@ -200,86 +200,45 @@ async def on_message(message):
     if not message.guild or message.author == bot.user:
         return
 
-    # Check if this is the UnbelievaBoat transaction log channel
     if message.channel.name == TRANSACTION_LOG_CHANNEL and message.embeds:
         embed = message.embeds[0]
         
-        # Check author field for "Balance updated"
-        if not embed.author or "Balance updated" not in str(embed.author.name):
-            await bot.process_commands(message)
+        # Step 1: Check author
+        if not embed.author:
+            await message.channel.send("[DEBUG] No author field")
             return
         
+        if "Balance updated" not in str(embed.author.name):
+            await message.channel.send(f"[DEBUG] Author not Balance updated: {embed.author.name}")
+            return
+        
+        # Step 2: Check description
         if not embed.description:
-            await bot.process_commands(message)
+            await message.channel.send("[DEBUG] No description")
             return
         
         description = embed.description
         
-        # Only process give-money commands
+        # Step 3: Check reason
         if "give-money" not in description.lower():
-            await bot.process_commands(message)
+            await message.channel.send(f"[DEBUG] Not give-money: {description[:100]}")
             return
         
-        # Parse: User: @receiver\nActioned by: @sender\nAmount: Cash: +amount | Bank: amount\nReason: give-money command
+        await message.channel.send(f"[DEBUG] Give-money detected! Parsing...")
+        
+        # Step 4: Parse
         receiver_match = re.search(r'User:\s*<@!?(\d+)>', description)
         sender_match = re.search(r'Actioned by:\s*<@!?(\d+)>', description)
-        cash_match = re.search(r'Cash:\s*([+-]?[\d,]+)', description)
-        bank_match = re.search(r'Bank:\s*([+-]?[\d,]+)', description)
         
-        if not receiver_match or not sender_match:
-            await bot.process_commands(message)
+        if not receiver_match:
+            await message.channel.send(f"[DEBUG] No receiver match in: {description[:200]}")
             return
         
-        receiver_id = int(receiver_match.group(1))
-        sender_id = int(sender_match.group(1))
-        
-        amount = 0
-        if cash_match:
-            cash_val = int(cash_match.group(1).replace(',', '').replace('+', ''))
-            amount += abs(cash_val)
-        if bank_match:
-            bank_val = int(bank_match.group(1).replace(',', '').replace('+', ''))
-            amount += abs(bank_val)
-        
-        if amount <= 0:
+        if not sender_match:
+            await message.channel.send(f"[DEBUG] No sender match in: {description[:200]}")
             return
         
-        receiver = message.guild.get_member(receiver_id)
-        sender = message.guild.get_member(sender_id)
-        
-        if not receiver or not sender:
-            return
-        
-        loan_role = message.guild.get_role(LOAN_BLACKLIST_ROLE_ID)
-        if not loan_role or loan_role not in receiver.roles:
-            await bot.process_commands(message)
-            return
-        
-        # Reverse the payment
-        async with aiohttp.ClientSession() as session:
-            await asyncio.sleep(0.5)
-            success = await reverse_payment(session, sender_id, receiver_id, amount)
-        
-        if success:
-            await message.channel.send(
-                f"🚫 **Payment Blocked!** {receiver.mention} is Loan Blacklisted.\n"
-                f"${amount:,} has been returned to {sender.mention}."
-            )
-            await send_cmd_log(
-                title="🚫 Payment Blocked",
-                description=f"**{sender.name}** tried to send ${amount:,} to **{receiver.name}** (Loan Blacklisted)\nMoney returned.",
-                color=0xff0000
-            )
-        else:
-            await message.channel.send(
-                f"⚠️ **Warning!** {receiver.mention} is Loan Blacklisted but payment reversal failed. Staff please check."
-            )
-            await send_cmd_log(
-                title="⚠️ Reversal Failed",
-                description=f"**{sender.name}** sent ${amount:,} to **{receiver.name}** (Loan Blacklisted). Could not reverse!",
-                color=0xff0000
-            )
-        return
+        await message.channel.send(f"[DEBUG] Found receiver and sender!")
     
     await bot.process_commands(message)
 
