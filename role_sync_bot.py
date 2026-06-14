@@ -34,6 +34,7 @@ LOAN_BLACKLIST_ROLE_ID = 1513096621934772325  # Loan Blacklist
 
 LOG_CHANNEL_NAME = "gamble-god-logs"
 CMD_LOG_CHANNEL_NAME = "ninja-bot-logs"
+TRANSACTION_LOG_CHANNEL = "transaction-logs"
 CASH_THRESHOLD = 10_000_000
 
 CHECK_INTERVAL_MINUTES = 5
@@ -153,15 +154,33 @@ async def reverse_payment(session: aiohttp.ClientSession, from_id: int, to_id: i
             if resp.status == 200:
                 data = await resp.json()
                 receiver_cash = data.get("cash", 0)
+                receiver_bank = data.get("bank", 0)
             else:
                 return False
 
-        new_cash = max(0, receiver_cash - amount)
+        # Take from cash first, then bank if needed
+        remaining = amount
+        new_cash = receiver_cash
+        new_bank = receiver_bank
+        
+        if receiver_cash >= remaining:
+            new_cash = receiver_cash - remaining
+            remaining = 0
+        else:
+            remaining -= receiver_cash
+            new_cash = 0
+            if receiver_bank >= remaining:
+                new_bank = receiver_bank - remaining
+                remaining = 0
+            else:
+                new_bank = 0
+        
         url_put = f"https://unbelievaboat.com/api/v1/guilds/{GUILD_ID}/users/{to_id}"
-        async with session.put(url_put, headers=headers, json={"cash": new_cash}) as resp:
+        async with session.put(url_put, headers=headers, json={"cash": new_cash, "bank": new_bank}) as resp:
             if resp.status != 200:
                 return False
 
+        # Return to sender as cash
         async with session.get(f"https://unbelievaboat.com/api/v1/guilds/{GUILD_ID}/users/{from_id}", headers=headers) as resp:
             if resp.status == 200:
                 sender_data = await resp.json()
@@ -183,90 +202,95 @@ async def on_message(message):
     # Don't process own messages or DMs
     if message.author.bot or not message.guild:
         return
-    
-    content = message.content.strip()
-    pay_patterns = [r'^!pay\s', r'^!give\s', r'^!givemoney\s']
-    
-    is_payment = False
-    for pattern in pay_patterns:
-        if re.match(pattern, content, re.IGNORECASE):
-            is_payment = True
-            break
-    
-    if not is_payment:
-        await bot.process_commands(message)
-        return
 
-    # Extract mentioned users
-    mentioned = message.mentions
-    if not mentioned:
-        await bot.process_commands(message)
-        return
+    # Check if this is the UnbelievaBoat transaction log channel
+    if message.channel.name == TRANSACTION_LOG_CHANNEL and message.embeds:
+        embed = message.embeds[0]
+        
+        # Look for give-money transactions
+        if embed.title and "Balance updated" in embed.title:
+            fields = {}
+            for field in embed.fields:
+                fields[field.name] = field.value
+            
+            reason = fields.get("Reason", "")
+            if "give-money" not in reason.lower():
+                await bot.process_commands(message)
+                return
+            
+            # Extract sender (Actioned by) and receiver (User)
+            receiver_str = fields.get("User", "")
+            sender_str = fields.get("Actioned by", "")
+            
+            # Extract user IDs from mentions
+            receiver_id = None
+            sender_id = None
+            
+            receiver_match = re.search(r'<@!?(\d+)>', receiver_str)
+            sender_match = re.search(r'<@!?(\d+)>', sender_str)
+            
+            if receiver_match:
+                receiver_id = int(receiver_match.group(1))
+            if sender_match:
+                sender_id = int(sender_match.group(1))
+            
+            if not receiver_id or not sender_id:
+                return
+            
+            # Get member objects
+            receiver = message.guild.get_member(receiver_id)
+            sender = message.guild.get_member(sender_id)
+            
+            if not receiver or not sender:
+                return
+            
+            # Check if receiver has Loan Blacklist
+            loan_role = message.guild.get_role(LOAN_BLACKLIST_ROLE_ID)
+            if not loan_role or loan_role not in receiver.roles:
+                return
+            
+            # Extract amount from "Cash: +10,000 | Bank: 0" format
+            amount_str = fields.get("Amount", "")
+            cash_match = re.search(r'Cash:\s*\+?([\d,]+)', amount_str)
+            bank_match = re.search(r'Bank:\s*\+?([\d,]+)', amount_str)
+            
+            amount = 0
+            if cash_match:
+                amount += int(cash_match.group(1).replace(',', ''))
+            if bank_match:
+                amount += int(bank_match.group(1).replace(',', ''))
+            
+            if amount <= 0:
+                return
+            
+            # Reverse the payment
+            async with aiohttp.ClientSession() as session:
+                await asyncio.sleep(0.5)
+                success = await reverse_payment(session, sender_id, receiver_id, amount)
+            
+            if success:
+                await message.channel.send(
+                    f"🚫 **Payment Blocked!** {receiver.mention} is Loan Blacklisted.\n"
+                    f"${amount:,} has been returned to {sender.mention}."
+                )
+                await send_cmd_log(
+                    title="🚫 Payment Blocked",
+                    description=f"**{sender.name}** tried to send ${amount:,} to **{receiver.name}** (Loan Blacklisted)\nMoney returned.",
+                    color=0xff0000
+                )
+            else:
+                await message.channel.send(
+                    f"⚠️ **Warning!** {receiver.mention} is Loan Blacklisted but payment reversal failed. Staff please check."
+                )
+                await send_cmd_log(
+                    title="⚠️ Reversal Failed",
+                    description=f"**{sender.name}** sent ${amount:,} to **{receiver.name}** (Loan Blacklisted). Could not reverse!",
+                    color=0xff0000
+                )
+            return
 
-    receiver = mentioned[0]
-    
-    # Check if receiver has Loan Blacklist
-    loan_role = message.guild.get_role(LOAN_BLACKLIST_ROLE_ID)
-    if not loan_role or loan_role not in receiver.roles:
-        await bot.process_commands(message)
-        return
-
-    # Remove mentions from content to find the amount
-    clean_content = content
-    for user in message.mentions:
-        clean_content = clean_content.replace(f'<@{user.id}>', '')
-        clean_content = clean_content.replace(f'<@!{user.id}>', '')
-    
-    # Check if it's an "all" payment
-    if re.search(r'\ball\b', clean_content, re.IGNORECASE):
-        try:
-            await message.delete()
-        except:
-            pass
-        await message.channel.send(
-            f"🚫 **Payment Blocked!** {receiver.mention} is Loan Blacklisted.\n"
-            f"`!give all` is not allowed to blacklisted users.",
-            delete_after=10
-        )
-        await send_cmd_log(
-            title="🚫 Payment Blocked (All)",
-            description=f"**{message.author.name}** tried to send all cash to **{receiver.name}** (Loan Blacklisted)\nCommand blocked.",
-            color=0xff0000
-        )
-        return
-
-    # Extract numeric amount
-    amount_match = re.search(r'(\d+)', clean_content)
-    if not amount_match:
-        await bot.process_commands(message)
-        return
-    
-    amount = int(amount_match.group(1))
-
-    # Block and reverse the payment
-    async with aiohttp.ClientSession() as session:
-        await asyncio.sleep(1)
-        success = await reverse_payment(session, message.author.id, receiver.id, amount)
-    
-    if success:
-        await message.channel.send(
-            f"🚫 **Payment Blocked!** {receiver.mention} is Loan Blacklisted.\n"
-            f"${amount:,} has been returned to {message.author.mention}."
-        )
-        await send_cmd_log(
-            title="🚫 Payment Blocked",
-            description=f"**{message.author.name}** tried to send ${amount:,} to **{receiver.name}** (Loan Blacklisted)\nMoney returned.",
-            color=0xff0000
-        )
-    else:
-        await message.channel.send(
-            f"⚠️ **Warning!** {receiver.mention} is Loan Blacklisted but payment reversal failed. Staff please check."
-        )
-        await send_cmd_log(
-            title="⚠️ Reversal Failed",
-            description=f"**{message.author.name}** sent ${amount:,} to **{receiver.name}** (Loan Blacklisted). Could not reverse!",
-            color=0xff0000
-        )
+    # Process commands normally for all other messages
+    await bot.process_commands(message)
 
 
 @tasks.loop(minutes=CHECK_INTERVAL_MINUTES)
