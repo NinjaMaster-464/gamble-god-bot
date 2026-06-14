@@ -32,7 +32,7 @@ ECO_BLACKLIST_ROLE_ID = 1511686789012914237  # Economy Blacklist
 LOAN_BLACKLIST_ROLE_ID = 1513096621934772325  # Loan Blacklist
 
 LOG_CHANNEL_NAME = "gamble-god-logs"
-CMD_LOG_CHANNEL_NAME = "ninja-bot-logs"
+CMD_LOG_CHANNEL_NAME = "ninja-bot-cmds"
 CASH_THRESHOLD = 10_000_000
 
 CHECK_INTERVAL_MINUTES = 5
@@ -274,8 +274,8 @@ async def purge_gods(ctx):
 
 @bot.command(name="blacklist")
 @has_any_role_by_id(GAMBLE_SUPERVISOR_ROLE_ID, ECONOMY_MANAGER_ROLE_ID)
-async def blacklist(ctx, member: discord.Member, blacklist_type: str):
-    """Toggle a blacklist role on a user. Usage: !blacklist @user economy or !blacklist @user loan"""
+async def blacklist(ctx, member: discord.Member, blacklist_type: str, *, reason: str = None):
+    """Toggle a blacklist role on a user. Usage: !blacklist @user economy [reason] or !blacklist @user loan [reason]"""
     
     eco_role = ctx.guild.get_role(ECO_BLACKLIST_ROLE_ID)
     loan_role = ctx.guild.get_role(LOAN_BLACKLIST_ROLE_ID)
@@ -285,40 +285,41 @@ async def blacklist(ctx, member: discord.Member, blacklist_type: str):
         return
 
     blacklist_type = blacklist_type.lower()
+    reason_text = f"\n**Reason:** {reason}" if reason else ""
 
     if blacklist_type == "economy":
         if eco_role in member.roles:
             await member.remove_roles(eco_role)
-            await ctx.send(f"✅ Removed Economy Blacklist from {member.name}")
+            await ctx.send(f"✅ Removed Economy Blacklist from {member.name}{reason_text}")
             await send_cmd_log(
                 title="🔓 Economy Blacklist Removed",
-                description=f"**{ctx.author.name}** removed Economy Blacklist from **{member.name}**",
+                description=f"**{ctx.author.name}** removed Economy Blacklist from **{member.name}**{reason_text}",
                 color=0xe67e22
             )
         else:
             await member.add_roles(eco_role)
-            await ctx.send(f"✅ Added Economy Blacklist to {member.name}")
+            await ctx.send(f"✅ Added Economy Blacklist to {member.name}{reason_text}")
             await send_cmd_log(
                 title="🔒 Economy Blacklist Added",
-                description=f"**{ctx.author.name}** added Economy Blacklist to **{member.name}**",
+                description=f"**{ctx.author.name}** added Economy Blacklist to **{member.name}**{reason_text}",
                 color=0xe67e22
             )
     
     elif blacklist_type == "loan":
         if loan_role in member.roles:
             await member.remove_roles(loan_role)
-            await ctx.send(f"✅ Removed Loan Blacklist from {member.name}")
+            await ctx.send(f"✅ Removed Loan Blacklist from {member.name}{reason_text}")
             await send_cmd_log(
                 title="🔓 Loan Blacklist Removed",
-                description=f"**{ctx.author.name}** removed Loan Blacklist from **{member.name}**",
+                description=f"**{ctx.author.name}** removed Loan Blacklist from **{member.name}**{reason_text}",
                 color=0xe74c3c
             )
         else:
             await member.add_roles(loan_role)
-            await ctx.send(f"✅ Added Loan Blacklist to {member.name}")
+            await ctx.send(f"✅ Added Loan Blacklist to {member.name}{reason_text}")
             await send_cmd_log(
                 title="🔒 Loan Blacklist Added",
-                description=f"**{ctx.author.name}** added Loan Blacklist to **{member.name}**",
+                description=f"**{ctx.author.name}** added Loan Blacklist to **{member.name}**{reason_text}",
                 color=0xe74c3c
             )
     
