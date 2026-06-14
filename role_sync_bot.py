@@ -23,10 +23,14 @@ DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 UNB_TOKEN = os.getenv("UNB_TOKEN")
 GUILD_ID = 1457641106517921824
 
-ROLE_NAME = "Gamble God"
-GAMBLER_ROLE_NAME = "The Gambler"
-GAMBLE_SUPERVISOR_ROLE = "Gamble Supervisor"
-ECONOMY_MANAGER_ROLE = "Economy Manager"
+# Role IDs
+ROLE_ID = 1482180530882482236  # Gamble God
+GAMBLER_ROLE_ID = 1483193995223105606  # The Gambler
+GAMBLE_SUPERVISOR_ROLE_ID = 1514096033125109760  # Gamble Supervisor
+ECONOMY_MANAGER_ROLE_ID = 1494014417841422447  # Economy Manager
+ECO_BLACKLIST_ROLE_ID = 1511686789012914237  # Economy Blacklist
+LOAN_BLACKLIST_ROLE_ID = 1513096621934772325  # Loan Blacklist
+
 LOG_CHANNEL_NAME = "gamble-god-logs"
 CMD_LOG_CHANNEL_NAME = "ninja-bot-cmds"
 CASH_THRESHOLD = 10_000_000
@@ -38,6 +42,19 @@ intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
+
+
+def has_any_role_by_id(*role_ids):
+    """Custom check: user must have at least one of the given role IDs."""
+    async def predicate(ctx):
+        if not ctx.author.guild:
+            return False
+        for role_id in role_ids:
+            role = ctx.author.guild.get_role(role_id)
+            if role and role in ctx.author.roles:
+                return True
+        raise commands.MissingRole([str(rid) for rid in role_ids])
+    return commands.check(predicate)
 
 
 @bot.event
@@ -98,7 +115,7 @@ async def get_balance(session: aiohttp.ClientSession, user_id: int) -> int:
 
 async def update_role(session: aiohttp.ClientSession, member: discord.Member):
     balance = await get_balance(session, member.id)
-    role = discord.utils.get(member.guild.roles, name=ROLE_NAME)
+    role = member.guild.get_role(ROLE_ID)
 
     if not role:
         return
@@ -131,9 +148,9 @@ async def sync_gamblers():
     if not guild:
         return
 
-    gambler_role = discord.utils.get(guild.roles, name=GAMBLER_ROLE_NAME)
+    gambler_role = guild.get_role(GAMBLER_ROLE_ID)
     if not gambler_role:
-        print(f"Role '{GAMBLER_ROLE_NAME}' not found!")
+        print(f"Role ID '{GAMBLER_ROLE_ID}' not found!")
         return
 
     gamblers = [m for m in guild.members if gambler_role in m.roles and not m.bot]
@@ -180,7 +197,7 @@ async def check_balance(ctx):
         balance = await get_balance(session, ctx.author.id)
         await update_role(session, ctx.author)
 
-    gambler_role = discord.utils.get(ctx.guild.roles, name=GAMBLER_ROLE_NAME)
+    gambler_role = ctx.guild.get_role(GAMBLER_ROLE_ID)
     if gambler_role and gambler_role not in ctx.author.roles:
         await ctx.author.add_roles(gambler_role)
         await send_log_embed(
@@ -209,7 +226,7 @@ async def sync_all_command(ctx):
 
 
 @bot.command(name="forcecheck")
-@commands.has_any_role(GAMBLE_SUPERVISOR_ROLE, ECONOMY_MANAGER_ROLE)
+@has_any_role_by_id(GAMBLE_SUPERVISOR_ROLE_ID, ECONOMY_MANAGER_ROLE_ID)
 async def force_check(ctx, member: discord.Member):
     """Gamble Supervisor+: Check a specific user's balance and update their roles."""
     async with aiohttp.ClientSession() as session:
@@ -219,11 +236,11 @@ async def force_check(ctx, member: discord.Member):
 
 
 @bot.command(name="purgegods")
-@commands.has_role(ECONOMY_MANAGER_ROLE)
+@has_any_role_by_id(ECONOMY_MANAGER_ROLE_ID)
 async def purge_gods(ctx):
     """Economy Manager only: Remove Gamble God from everyone under $10M."""
     guild = ctx.guild
-    god_role = discord.utils.get(guild.roles, name=ROLE_NAME)
+    god_role = guild.get_role(ROLE_ID)
     
     if not god_role:
         await ctx.send("❌ Gamble God role not found.")
@@ -256,12 +273,12 @@ async def purge_gods(ctx):
 
 
 @bot.command(name="blacklist")
-@commands.has_any_role(GAMBLE_SUPERVISOR_ROLE, ECONOMY_MANAGER_ROLE)
+@has_any_role_by_id(GAMBLE_SUPERVISOR_ROLE_ID, ECONOMY_MANAGER_ROLE_ID)
 async def blacklist(ctx, member: discord.Member, blacklist_type: str):
     """Toggle a blacklist role on a user. Usage: !blacklist @user economy or !blacklist @user loan"""
     
-    eco_role = discord.utils.get(ctx.guild.roles, name="Economy Blacklist")
-    loan_role = discord.utils.get(ctx.guild.roles, name="Loan Blacklist(they don't pay back loans)")
+    eco_role = ctx.guild.get_role(ECO_BLACKLIST_ROLE_ID)
+    loan_role = ctx.guild.get_role(LOAN_BLACKLIST_ROLE_ID)
 
     if not eco_role or not loan_role:
         await ctx.send("❌ One or both blacklist roles not found.")
