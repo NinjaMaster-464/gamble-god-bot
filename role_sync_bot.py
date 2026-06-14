@@ -199,123 +199,28 @@ async def reverse_payment(session: aiohttp.ClientSession, from_id: int, to_id: i
 
 @bot.event
 async def on_message(message):
-    # Don't process DMs or our own messages
     if not message.guild or message.author == bot.user:
         return
 
-    # Check if this is the UnbelievaBoat transaction log channel
-    if message.channel.name == TRANSACTION_LOG_CHANNEL and message.embeds:
-        embed = message.embeds[0]
+    # SUPER SIMPLE: If this is transactions-logs, just send a test message
+    if message.channel.name == TRANSACTION_LOG_CHANNEL:
+        # Try to send a simple text message
+        try:
+            await message.channel.send(f"Bot saw message from {message.author.name}. Embeds: {len(message.embeds)}")
+        except Exception as e:
+            print(f"Failed to send in transactions-logs: {e}")
         
-        # Check author field for "Balance updated"
-        if not embed.author or "Balance updated" not in str(embed.author.name):
-            await bot.process_commands(message)
-            return
+        # Also try the log channel
+        try:
+            guild = bot.get_guild(GUILD_ID)
+            log_channel = discord.utils.get(guild.text_channels, name=CMD_LOG_CHANNEL_NAME)
+            if log_channel:
+                await log_channel.send(f"[TEST] Saw message in transactions-logs. Author: {message.author.name}, Embeds: {len(message.embeds)}")
+        except Exception as e:
+            print(f"Failed to send in log channel: {e}")
         
-        if not embed.description:
-            await bot.process_commands(message)
-            return
-        
-        description = embed.description
-        
-        # Only process give-money commands
-        if "give-money" not in description.lower():
-            await bot.process_commands(message)
-            return
-        
-        await send_cmd_log(
-            title="[DEBUG] Give-Money Detected",
-            description=f"Parsing...",
-            color=0x3498db
-        )
-        
-        # Parse the description
-        receiver_match = re.search(r'User:\s*<@!?(\d+)>', description)
-        sender_match = re.search(r'Actioned by:\s*<@!?(\d+)>', description)
-        cash_match = re.search(r'Cash:\s*([+-]?[\d,]+)', description)
-        bank_match = re.search(r'Bank:\s*([+-]?[\d,]+)', description)
-        
-        await send_cmd_log(
-            title="[DEBUG] Regex Results",
-            description=f"Receiver: {receiver_match.group(1) if receiver_match else 'None'}\nSender: {sender_match.group(1) if sender_match else 'None'}\nCash: {cash_match.group(1) if cash_match else 'None'}\nBank: {bank_match.group(1) if bank_match else 'None'}",
-            color=0xf39c12
-        )
-        
-        if not receiver_match or not sender_match:
-            await send_cmd_log(
-                title="[DEBUG] Failed",
-                description="Missing receiver or sender match",
-                color=0xff0000
-            )
-            await bot.process_commands(message)
-            return
-        
-        receiver_id = int(receiver_match.group(1))
-        sender_id = int(sender_match.group(1))
-        
-        amount = 0
-        if cash_match:
-            cash_val = int(cash_match.group(1).replace(',', '').replace('+', ''))
-            amount += abs(cash_val)
-        if bank_match:
-            bank_val = int(bank_match.group(1).replace(',', '').replace('+', ''))
-            amount += abs(bank_val)
-        
-        receiver = message.guild.get_member(receiver_id)
-        sender = message.guild.get_member(sender_id)
-        
-        loan_role = message.guild.get_role(LOAN_BLACKLIST_ROLE_ID)
-        
-        await send_cmd_log(
-            title="[DEBUG] Checks",
-            description=f"Receiver found: {receiver is not None}\nSender found: {sender is not None}\nLoan role found: {loan_role is not None}\nHas blacklist: {loan_role in receiver.roles if receiver and loan_role else False}\nAmount: ${amount:,}",
-            color=0xf39c12
-        )
-        
-        if not receiver or not sender:
-            await send_cmd_log(title="[DEBUG] Failed", description="Member not found", color=0xff0000)
-            return
-        
-        if not loan_role or loan_role not in receiver.roles:
-            await send_cmd_log(title="[DEBUG] Skipped", description="Not blacklisted", color=0x95a5a6)
-            await bot.process_commands(message)
-            return
-        
-        if amount <= 0:
-            await send_cmd_log(title="[DEBUG] Failed", description="Amount is 0", color=0xff0000)
-            return
-        
-        # Reverse the payment
-        await send_cmd_log(title="[DEBUG] Reversing...", description=f"${amount:,}", color=0x2ecc71)
-        
-        async with aiohttp.ClientSession() as session:
-            await asyncio.sleep(0.5)
-            success = await reverse_payment(session, sender_id, receiver_id, amount)
-        
-        await send_cmd_log(title="[DEBUG] Result", description=f"Success: {success}", color=0x00ff00 if success else 0xff0000)
-        
-        if success:
-            await message.channel.send(
-                f"🚫 **Payment Blocked!** {receiver.mention} is Loan Blacklisted.\n"
-                f"${amount:,} has been returned to {sender.mention}."
-            )
-            await send_cmd_log(
-                title="🚫 Payment Blocked",
-                description=f"**{sender.name}** tried to send ${amount:,} to **{receiver.name}** (Loan Blacklisted)\nMoney returned.",
-                color=0xff0000
-            )
-        else:
-            await message.channel.send(
-                f"⚠️ **Warning!** {receiver.mention} is Loan Blacklisted but payment reversal failed. Staff please check."
-            )
-            await send_cmd_log(
-                title="⚠️ Reversal Failed",
-                description=f"**{sender.name}** sent ${amount:,} to **{receiver.name}** (Loan Blacklisted). Could not reverse!",
-                color=0xff0000
-            )
         return
-    
-    # Process commands normally
+
     await bot.process_commands(message)
 
 
