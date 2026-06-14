@@ -154,7 +154,6 @@ async def on_message(message):
         return
 
     # Watch for UnbelievaBoat payment confirmation embed
-    # Format: "sender_name\n✅ @receiver has received your :unbelievacoin: 100"
     if message.author.bot and message.embeds:
         embed = message.embeds[0]
         if not embed.description:
@@ -163,7 +162,7 @@ async def on_message(message):
         
         description = embed.description
         
-        if "has received your" not in description or ":unbelievacoin:" not in description:
+        if "has received your" not in description:
             await bot.process_commands(message)
             return
         
@@ -171,7 +170,7 @@ async def on_message(message):
         lines = description.split('\n')
         sender_name = lines[0].strip() if lines else "Unknown"
         
-        # Find receiver mention
+        # Find receiver mention (first mention in description)
         receiver_match = re.search(r'<@!?(\d+)>', description)
         if not receiver_match:
             await bot.process_commands(message)
@@ -183,13 +182,18 @@ async def on_message(message):
             await bot.process_commands(message)
             return
         
-        # Find amount
-        amount_match = re.search(r':unbelievacoin:\s*([\d,]+)', description)
-        if not amount_match:
+        # Find ALL numbers, take the last one as the amount
+        all_numbers = re.findall(r'(\d+)', description)
+        if not all_numbers:
             await bot.process_commands(message)
             return
         
-        amount = int(amount_match.group(1).replace(',', ''))
+        # Last number should be the amount
+        amount = int(all_numbers[-1])
+        
+        # Skip if it matches the receiver ID
+        if amount == receiver_id and len(all_numbers) > 1:
+            amount = int(all_numbers[-2])
         
         # Check if receiver has Loan Blacklist
         loan_role = message.guild.get_role(LOAN_BLACKLIST_ROLE_ID)
