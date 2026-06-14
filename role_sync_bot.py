@@ -96,7 +96,7 @@ async def get_balance(session: aiohttp.ClientSession, user_id: int) -> int:
         return 0
 
 
-async def update_role(session: aiohttp.ClientSession, member: discord.Member, log_changes: bool = True):
+async def update_role(session: aiohttp.ClientSession, member: discord.Member):
     balance = await get_balance(session, member.id)
     role = discord.utils.get(member.guild.roles, name=ROLE_NAME)
 
@@ -107,24 +107,22 @@ async def update_role(session: aiohttp.ClientSession, member: discord.Member, lo
 
     if balance >= CASH_THRESHOLD and not has_role:
         await member.add_roles(role)
-        if log_changes:
-            print(f"Gave Gamble God to {member.name} (${balance:,})")
-            await send_log_embed(
-                title="🟢 Gamble God Assigned",
-                description=f"**{member.name}** now has Gamble God!\nBalance: ${balance:,}",
-                color=0x00ff00
-            )
+        print(f"Gave Gamble God to {member.name} (${balance:,})")
+        await send_log_embed(
+            title="🟢 Gamble God Assigned",
+            description=f"**{member.name}** now has Gamble God!\nBalance: ${balance:,}",
+            color=0x00ff00
+        )
     elif balance < CASH_THRESHOLD and has_role:
         await member.remove_roles(role)
-        if log_changes:
-            print(f"Removed Gamble God from {member.name} (${balance:,})")
-            await send_log_embed(
-                title="🔴 Gamble God Removed",
-                description=f"**{member.name}** lost Gamble God.\nBalance: ${balance:,}",
-                color=0xff0000
-            )
+        print(f"Removed Gamble God from {member.name} (${balance:,})")
+        await send_log_embed(
+            title="🔴 Gamble God Removed",
+            description=f"**{member.name}** lost Gamble God.\nBalance: ${balance:,}",
+            color=0xff0000
+        )
     
-    return balance, has_role
+    return balance
 
 
 @tasks.loop(minutes=CHECK_INTERVAL_MINUTES)
@@ -201,22 +199,23 @@ async def check_balance(ctx):
 @commands.has_permissions(administrator=True)
 async def sync_all_command(ctx):
     await ctx.send("Syncing all gamblers...")
+    await send_cmd_log(
+        title="🔄 Sync All",
+        description=f"**{ctx.author.name}** triggered a full sync.",
+        color=0x3498db
+    )
     await sync_gamblers()
     await ctx.send("Done!")
 
 
 @bot.command(name="forcecheck")
 @commands.has_any_role(GAMBLE_SUPERVISOR_ROLE, ECONOMY_MANAGER_ROLE)
-async def force_check(ctx):
-    """Gamble Supervisor+: Force a full sync of all gamblers."""
-    await ctx.send("⚡ Force sync started...")
-    await send_cmd_log(
-        title="⚡ Force Check",
-        description=f"**{ctx.author.name}** triggered a force sync.",
-        color=0x3498db
-    )
-    await sync_gamblers()
-    await ctx.send("✅ Force sync complete!")
+async def force_check(ctx, member: discord.Member):
+    """Gamble Supervisor+: Check a specific user's balance and update their roles."""
+    async with aiohttp.ClientSession() as session:
+        balance = await update_role(session, member)
+
+    await ctx.send(f"**{member.name}** total balance: ${balance:,} — roles updated.")
 
 
 @bot.command(name="purgegods")
