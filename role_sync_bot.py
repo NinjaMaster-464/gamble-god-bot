@@ -207,121 +207,35 @@ async def on_message(message):
     if message.channel.name == TRANSACTION_LOG_CHANNEL and message.embeds:
         embed = message.embeds[0]
         
-        # Debug: log what we see
+        # Debug: log everything about the embed
         await send_cmd_log(
             title="[DEBUG] Transaction Log Detected",
-            description=f"Author: {message.author.name}\nTitle: {embed.title}\nFields: {[(f.name, f.value[:50]) for f in embed.fields]}",
+            description=f"**Author:** {message.author.name}\n**Title:** {embed.title}\n**Description:** {str(embed.description)[:200]}\n**Fields:** {[(f.name, f.value[:50]) for f in embed.fields]}\n**Author field:** {embed.author.name if embed.author else 'None'}\n**Footer:** {embed.footer.text if embed.footer else 'None'}",
             color=0x3498db
         )
         
-        # Look for Balance updated embeds
-        if embed.title and "Balance updated" in str(embed.title):
+        # Try to parse the description for transaction info
+        if embed.description and "give-money" in embed.description.lower():
             await send_cmd_log(
-                title="[DEBUG] Balance Updated Found",
-                description=f"Processing...",
+                title="[DEBUG] Give-Money Detected",
+                description=f"Parsing description...",
                 color=0x2ecc71
             )
             
-            fields = {}
-            for field in embed.fields:
-                fields[field.name] = field.value
+            # Parse description for user mentions and amounts
+            description = embed.description
             
-            reason = fields.get("Reason", "")
+            # Find all user mentions
+            mentions = re.findall(r'<@!?(\d+)>', description)
             
-            if "give-money" not in reason.lower():
-                await send_cmd_log(
-                    title="[DEBUG] Skipped",
-                    description=f"Not give-money: {reason}",
-                    color=0x95a5a6
-                )
-                await bot.process_commands(message)
-                return
-            
-            receiver_str = fields.get("User", "")
-            sender_str = fields.get("Actioned by", "")
-            
-            receiver_match = re.search(r'<@!?(\d+)>', receiver_str)
-            sender_match = re.search(r'<@!?(\d+)>', sender_str)
-            
-            if not receiver_match or not sender_match:
-                await send_cmd_log(
-                    title="[DEBUG] Parse Error",
-                    description=f"Could not extract IDs\nReceiver: {receiver_str}\nSender: {sender_str}",
-                    color=0xff0000
-                )
-                await bot.process_commands(message)
-                return
-            
-            receiver_id = int(receiver_match.group(1))
-            sender_id = int(sender_match.group(1))
-            
-            receiver = message.guild.get_member(receiver_id)
-            sender = message.guild.get_member(sender_id)
-            
-            if not receiver or not sender:
-                await send_cmd_log(
-                    title="[DEBUG] Member Error",
-                    description=f"Could not find members",
-                    color=0xff0000
-                )
-                return
-            
-            loan_role = message.guild.get_role(LOAN_BLACKLIST_ROLE_ID)
-            if not loan_role:
-                return
-            
-            if loan_role not in receiver.roles:
-                await send_cmd_log(
-                    title="[DEBUG] Not Blacklisted",
-                    description=f"{receiver.name} is not loan blacklisted",
-                    color=0x95a5a6
-                )
-                await bot.process_commands(message)
-                return
-            
-            amount_str = fields.get("Amount", "")
-            cash_match = re.search(r'Cash:\s*\+?([\d,]+)', amount_str)
-            bank_match = re.search(r'Bank:\s*\+?([\d,]+)', amount_str)
-            
-            amount = 0
-            if cash_match:
-                amount += int(cash_match.group(1).replace(',', ''))
-            if bank_match:
-                amount += int(bank_match.group(1).replace(',', ''))
-            
-            if amount <= 0:
-                return
+            # Find amounts
+            amounts = re.findall(r'\$?([\d,]+)', description)
             
             await send_cmd_log(
-                title="[DEBUG] Reversing",
-                description=f"{sender.name} -> {receiver.name}\n${amount:,}",
+                title="[DEBUG] Parsed Data",
+                description=f"Mentions: {mentions}\nAmounts: {amounts}",
                 color=0xf39c12
             )
-            
-            async with aiohttp.ClientSession() as session:
-                await asyncio.sleep(0.5)
-                success = await reverse_payment(session, sender_id, receiver_id, amount)
-            
-            if success:
-                await message.channel.send(
-                    f"🚫 **Payment Blocked!** {receiver.mention} is Loan Blacklisted.\n"
-                    f"${amount:,} has been returned to {sender.mention}."
-                )
-                await send_cmd_log(
-                    title="🚫 Payment Blocked",
-                    description=f"**{sender.name}** tried to send ${amount:,} to **{receiver.name}** (Loan Blacklisted)\nMoney returned.",
-                    color=0xff0000
-                )
-            else:
-                await message.channel.send(
-                    f"⚠️ **Warning!** {receiver.mention} is Loan Blacklisted but payment reversal failed. Staff please check."
-                )
-                await send_cmd_log(
-                    title="⚠️ Reversal Failed",
-                    description=f"**{sender.name}** sent ${amount:,} to **{receiver.name}** (Loan Blacklisted). Could not reverse!",
-                    color=0xff0000
-                )
-            return
     
     # Process commands normally
     await bot.process_commands(message)
