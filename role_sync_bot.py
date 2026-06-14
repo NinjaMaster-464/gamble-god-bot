@@ -223,26 +223,36 @@ async def on_message(message):
             await bot.process_commands(message)
             return
         
-        # Parse the description
-        # Format: User: @receiver\nActioned by: @sender\nAmount: Cash: +amount | Bank: amount\nReason: give-money command
+        await send_cmd_log(
+            title="[DEBUG] Give-Money Detected",
+            description=f"Parsing...",
+            color=0x3498db
+        )
         
-        # Extract receiver (User: line)
+        # Parse the description
         receiver_match = re.search(r'User:\s*<@!?(\d+)>', description)
-        # Extract sender (Actioned by: line)
         sender_match = re.search(r'Actioned by:\s*<@!?(\d+)>', description)
-        # Extract cash amount
         cash_match = re.search(r'Cash:\s*([+-]?[\d,]+)', description)
-        # Extract bank amount
         bank_match = re.search(r'Bank:\s*([+-]?[\d,]+)', description)
         
+        await send_cmd_log(
+            title="[DEBUG] Regex Results",
+            description=f"Receiver: {receiver_match.group(1) if receiver_match else 'None'}\nSender: {sender_match.group(1) if sender_match else 'None'}\nCash: {cash_match.group(1) if cash_match else 'None'}\nBank: {bank_match.group(1) if bank_match else 'None'}",
+            color=0xf39c12
+        )
+        
         if not receiver_match or not sender_match:
+            await send_cmd_log(
+                title="[DEBUG] Failed",
+                description="Missing receiver or sender match",
+                color=0xff0000
+            )
             await bot.process_commands(message)
             return
         
         receiver_id = int(receiver_match.group(1))
         sender_id = int(sender_match.group(1))
         
-        # Calculate total amount (absolute value, since it shows negative for sender)
         amount = 0
         if cash_match:
             cash_val = int(cash_match.group(1).replace(',', '').replace('+', ''))
@@ -251,25 +261,38 @@ async def on_message(message):
             bank_val = int(bank_match.group(1).replace(',', '').replace('+', ''))
             amount += abs(bank_val)
         
-        if amount <= 0:
-            return
-        
         receiver = message.guild.get_member(receiver_id)
         sender = message.guild.get_member(sender_id)
         
+        loan_role = message.guild.get_role(LOAN_BLACKLIST_ROLE_ID)
+        
+        await send_cmd_log(
+            title="[DEBUG] Checks",
+            description=f"Receiver found: {receiver is not None}\nSender found: {sender is not None}\nLoan role found: {loan_role is not None}\nHas blacklist: {loan_role in receiver.roles if receiver and loan_role else False}\nAmount: ${amount:,}",
+            color=0xf39c12
+        )
+        
         if not receiver or not sender:
+            await send_cmd_log(title="[DEBUG] Failed", description="Member not found", color=0xff0000)
             return
         
-        # Check if receiver has Loan Blacklist
-        loan_role = message.guild.get_role(LOAN_BLACKLIST_ROLE_ID)
         if not loan_role or loan_role not in receiver.roles:
+            await send_cmd_log(title="[DEBUG] Skipped", description="Not blacklisted", color=0x95a5a6)
             await bot.process_commands(message)
             return
         
+        if amount <= 0:
+            await send_cmd_log(title="[DEBUG] Failed", description="Amount is 0", color=0xff0000)
+            return
+        
         # Reverse the payment
+        await send_cmd_log(title="[DEBUG] Reversing...", description=f"${amount:,}", color=0x2ecc71)
+        
         async with aiohttp.ClientSession() as session:
             await asyncio.sleep(0.5)
             success = await reverse_payment(session, sender_id, receiver_id, amount)
+        
+        await send_cmd_log(title="[DEBUG] Result", description=f"Success: {success}", color=0x00ff00 if success else 0xff0000)
         
         if success:
             await message.channel.send(
