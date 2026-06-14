@@ -145,7 +145,6 @@ async def update_role(session: aiohttp.ClientSession, member: discord.Member):
 
 async def reverse_payment(session: aiohttp.ClientSession, from_id: int, to_id: int, amount: int):
     """Take money from the receiver and return it to the sender."""
-    # Get receiver's current cash
     url_get = f"https://unbelievaboat.com/api/v1/guilds/{GUILD_ID}/users/{to_id}"
     headers = {"Authorization": UNB_TOKEN, "Accept": "application/json"}
     
@@ -157,14 +156,12 @@ async def reverse_payment(session: aiohttp.ClientSession, from_id: int, to_id: i
             else:
                 return False
 
-        # Remove the transferred amount from receiver
         new_cash = max(0, receiver_cash - amount)
         url_put = f"https://unbelievaboat.com/api/v1/guilds/{GUILD_ID}/users/{to_id}"
         async with session.put(url_put, headers=headers, json={"cash": new_cash}) as resp:
             if resp.status != 200:
                 return False
 
-        # Add it back to sender
         async with session.get(f"https://unbelievaboat.com/api/v1/guilds/{GUILD_ID}/users/{from_id}", headers=headers) as resp:
             if resp.status == 200:
                 sender_data = await resp.json()
@@ -187,7 +184,6 @@ async def on_message(message):
     if message.author.bot or not message.guild:
         return
     
-    # Check if message starts with payment commands
     content = message.content.strip()
     pay_patterns = [r'^!pay\s', r'^!give\s', r'^!givemoney\s']
     
@@ -198,7 +194,6 @@ async def on_message(message):
             break
     
     if not is_payment:
-        # Process commands normally
         await bot.process_commands(message)
         return
 
@@ -216,19 +211,41 @@ async def on_message(message):
         await bot.process_commands(message)
         return
 
-    # Extract amount from message
-    amount_match = re.search(r'(\d+)', content)
+    # Remove mentions from content to find the amount
+    clean_content = content
+    for user in message.mentions:
+        clean_content = clean_content.replace(f'<@{user.id}>', '')
+        clean_content = clean_content.replace(f'<@!{user.id}>', '')
+    
+    # Check if it's an "all" payment
+    if re.search(r'\ball\b', clean_content, re.IGNORECASE):
+        try:
+            await message.delete()
+        except:
+            pass
+        await message.channel.send(
+            f"🚫 **Payment Blocked!** {receiver.mention} is Loan Blacklisted.\n"
+            f"`!give all` is not allowed to blacklisted users.",
+            delete_after=10
+        )
+        await send_cmd_log(
+            title="🚫 Payment Blocked (All)",
+            description=f"**{message.author.name}** tried to send all cash to **{receiver.name}** (Loan Blacklisted)\nCommand blocked.",
+            color=0xff0000
+        )
+        return
+
+    # Extract numeric amount
+    amount_match = re.search(r'(\d+)', clean_content)
     if not amount_match:
         await bot.process_commands(message)
         return
     
     amount = int(amount_match.group(1))
 
-    # Block the payment and reverse it
+    # Block and reverse the payment
     async with aiohttp.ClientSession() as session:
-        # Wait a moment for UnbelievaBoat to process first
         await asyncio.sleep(1)
-        
         success = await reverse_payment(session, message.author.id, receiver.id, amount)
     
     if success:
