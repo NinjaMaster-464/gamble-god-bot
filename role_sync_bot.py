@@ -177,14 +177,26 @@ async def on_message(message):
             await bot.process_commands(message)
             return
         
-        all_numbers = re.findall(r'(\d+)', description)
+        # Find numbers that include commas (like 1,000)
+        all_numbers = re.findall(r'([\d,]+)', description)
         if not all_numbers:
             await bot.process_commands(message)
             return
         
-        amount = int(all_numbers[-1])
-        if amount == receiver_id and len(all_numbers) > 1:
-            amount = int(all_numbers[-2])
+        numbers = []
+        for n in all_numbers:
+            try:
+                numbers.append(int(n.replace(',', '')))
+            except:
+                pass
+        
+        if not numbers:
+            await bot.process_commands(message)
+            return
+        
+        amount = numbers[-1]
+        if amount == receiver_id and len(numbers) > 1:
+            amount = numbers[-2]
         
         loan_role = message.guild.get_role(LOAN_BLACKLIST_ROLE_ID)
         if not loan_role or loan_role not in receiver.roles:
