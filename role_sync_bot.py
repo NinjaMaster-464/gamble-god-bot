@@ -177,14 +177,15 @@ async def on_message(message):
             await bot.process_commands(message)
             return
         
-        all_numbers = re.findall(r'(\d+)', description)
-        if not all_numbers:
+        # Find amount after :unbelievacoin:
+        amount_match = re.search(r':unbelievacoin:\s*([\d,]+)', description)
+        if not amount_match:
+            amount_match = re.search(r'💰\s*([\d,]+)', description)
+        if not amount_match:
             await bot.process_commands(message)
             return
         
-        amount = int(all_numbers[-1])
-        if amount == receiver_id and len(all_numbers) > 1:
-            amount = int(all_numbers[-2])
+        amount = int(amount_match.group(1).replace(',', ''))
         
         loan_role = message.guild.get_role(LOAN_BLACKLIST_ROLE_ID)
         if not loan_role or loan_role not in receiver.roles:
