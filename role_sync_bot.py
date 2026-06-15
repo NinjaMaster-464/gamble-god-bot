@@ -153,7 +153,6 @@ async def on_message(message):
     if not message.guild or message.author == bot.user:
         return
 
-    # Watch for UnbelievaBoat payment confirmation embed
     if message.author.bot and message.embeds:
         embed = message.embeds[0]
         if not embed.description:
@@ -166,8 +165,8 @@ async def on_message(message):
             await bot.process_commands(message)
             return
         
-        # First line is the sender's name (before the \n)
-        sender_name = description.split('\n')[0].strip()
+        # Sender is in the embed author name
+        sender_name = embed.author.name if embed.author else "Unknown"
         
         # Find receiver mention
         receiver_match = re.search(r'<@!?(\d+)>', description)
@@ -191,13 +190,11 @@ async def on_message(message):
         if amount == receiver_id and len(all_numbers) > 1:
             amount = int(all_numbers[-2])
         
-        # Check if receiver has Loan Blacklist
         loan_role = message.guild.get_role(LOAN_BLACKLIST_ROLE_ID)
         if not loan_role or loan_role not in receiver.roles:
             await bot.process_commands(message)
             return
         
-        # Confiscate the money
         async with aiohttp.ClientSession() as session:
             await asyncio.sleep(0.5)
             success = await confiscate_money(session, receiver.id, amount)
