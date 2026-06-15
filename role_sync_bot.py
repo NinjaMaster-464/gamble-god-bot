@@ -166,11 +166,10 @@ async def on_message(message):
             await bot.process_commands(message)
             return
         
-        # First line is the sender's name
-        lines = description.split('\n')
-        sender_name = lines[0].strip() if lines else "Unknown"
+        # First line is the sender's name (before the \n)
+        sender_name = description.split('\n')[0].strip()
         
-        # Find receiver mention (first mention in description)
+        # Find receiver mention
         receiver_match = re.search(r'<@!?(\d+)>', description)
         if not receiver_match:
             await bot.process_commands(message)
@@ -188,10 +187,7 @@ async def on_message(message):
             await bot.process_commands(message)
             return
         
-        # Last number should be the amount
         amount = int(all_numbers[-1])
-        
-        # Skip if it matches the receiver ID
         if amount == receiver_id and len(all_numbers) > 1:
             amount = int(all_numbers[-2])
         
