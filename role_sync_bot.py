@@ -122,7 +122,6 @@ async def update_role(session: aiohttp.ClientSession, member: discord.Member):
 
 
 async def confiscate_money(session: aiohttp.ClientSession, user_id: int, amount: int):
-    """Remove money from a user."""
     url_get = f"https://unbelievaboat.com/api/v1/guilds/{GUILD_ID}/users/{user_id}"
     headers = {"Authorization": UNB_TOKEN, "Accept": "application/json"}
     async with session.get(url_get, headers=headers) as resp:
@@ -165,10 +164,8 @@ async def on_message(message):
             await bot.process_commands(message)
             return
         
-        # Sender is in the embed author name
         sender_name = embed.author.name if embed.author else "Unknown"
         
-        # Find receiver mention
         receiver_match = re.search(r'<@!?(\d+)>', description)
         if not receiver_match:
             await bot.process_commands(message)
@@ -180,7 +177,6 @@ async def on_message(message):
             await bot.process_commands(message)
             return
         
-        # Find ALL numbers, take the last one as the amount
         all_numbers = re.findall(r'(\d+)', description)
         if not all_numbers:
             await bot.process_commands(message)
@@ -200,10 +196,12 @@ async def on_message(message):
             success = await confiscate_money(session, receiver.id, amount)
         
         if success:
-            await message.channel.send(
-                f"🚫 **Payment Blocked!** {receiver.mention} is Loan Blacklisted.\n"
-                f"${amount:,} from **{sender_name}** has been confiscated."
+            block_embed = discord.Embed(
+                title="🚫 Payment Blocked",
+                description=f"{receiver.mention} is **Loan Blacklisted**.\n${amount:,} from **{sender_name}** has been confiscated.",
+                color=0xff0000
             )
+            await message.channel.send(embed=block_embed)
             await send_cmd_log(
                 title="🚫 Payment Blocked",
                 description=f"${amount:,} from **{sender_name}** to **{receiver.name}** (Loan Blacklisted) was confiscated.",
